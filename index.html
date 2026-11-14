@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DFA NFA String Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: machine definition on the left, diagram and run controls on the right,
+   evidence (step log, computation tree, test suite) in full-width rows below. */
+:root{
+  --bg:#f2f4f8; --surface:#ffffff; --sunken:#f7f8fb;
+  --ink:#16202e; --muted:#5a6679; --line:#d3d9e3;
+  --accent:#2747c7; --accent-ink:#ffffff;
+  --active:#f5a300; --active-soft:#fff1cc; --active-ink:#3b2700;
+  --ok:#157a46; --ok-soft:#e2f4ea; --bad:#bf2f2a; --bad-soft:#fbe6e4; --warn:#8a5a00; --warn-soft:#fff3d6;
+  --font-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0f141c; --surface:#171e29; --sunken:#121821;
+    --ink:#e7ecf3; --muted:#94a1b5; --line:#2b3545;
+    --accent:#93a8ff; --accent-ink:#0d1430;
+    --active:#ffb938; --active-soft:#3d2e0c; --active-ink:#2a1c00;
+    --ok:#52cc8d; --ok-soft:#12301f; --bad:#ff7d73; --bad-soft:#3a1917; --warn:#ffc65c; --warn-soft:#33270a;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f141c; --surface:#171e29; --sunken:#121821;
+  --ink:#e7ecf3; --muted:#94a1b5; --line:#2b3545;
+  --accent:#93a8ff; --accent-ink:#0d1430;
+  --active:#ffb938; --active-soft:#3d2e0c; --active-ink:#2a1c00;
+  --ok:#52cc8d; --ok-soft:#12301f; --bad:#ff7d73; --bad-soft:#3a1917; --warn:#ffc65c; --warn-soft:#33270a;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1200px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--font-display);font-size:28px;line-height:1.15;margin:0;text-wrap:balance;letter-spacing:.01em}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+h2{font-family:var(--font-display);font-size:17px;margin:0;letter-spacing:.02em;text-wrap:balance}
+.grid2{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;align-items:start}
+.grid-even{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.grid2,.grid-even{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.hint{color:var(--muted);font-size:13px;margin:0}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.row > label.f{flex:1 1 160px}
+input[type=text],select,textarea{font:inherit;font-family:var(--font-mono);font-size:14px;color:var(--ink);background:var(--sunken);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:150px;line-height:1.5}
+select{font-family:var(--font-body)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:inherit;font-weight:500;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:var(--sunken);padding:7px 14px;font-family:var(--font-mono);font-size:13px}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.scroll-x{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:middle}
+thead th{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.mono,tbody th,td.m{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+#ttable th.c,#ttable td.c{text-align:center;width:34px;padding-left:4px;padding-right:4px}
+#ttable input.cell{min-width:74px;padding:5px 7px}
+#ttable input.cell.bad{border-color:var(--bad);background:var(--bad-soft)}
+.msgs{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;font-size:13px}
+.msgs li{padding:6px 10px;border-radius:6px;border-left:4px solid}
+.msgs .err{background:var(--bad-soft);border-color:var(--bad)}
+.msgs .wrn{background:var(--warn-soft);border-color:var(--warn)}
+.msgs .fine{background:var(--ok-soft);border-color:var(--ok)}
+.formal{font-family:var(--font-mono);font-size:13px;background:var(--sunken);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+/* diagram */
+#diagram{width:100%;height:auto;display:block;background:var(--sunken);border:1px solid var(--line);border-radius:8px}
+.node{cursor:grab;touch-action:none}
+.node circle{fill:var(--surface);stroke:var(--ink);stroke-width:1.6}
+.node text{font-family:var(--font-mono);font-size:14px;font-weight:500;fill:var(--ink);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.node.on circle{fill:var(--active);stroke:var(--active-ink)}
+.node.on text{fill:var(--active-ink);font-weight:600}
+.edge path{fill:none;stroke:var(--muted);stroke-width:1.5}
+.edge text{font-family:var(--font-mono);font-size:13px;fill:var(--ink);text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:var(--sunken);stroke-width:5px;stroke-linejoin:round}
+.edge.on path{stroke:var(--active);stroke-width:3}
+.edge.on text{font-weight:600}
+.ah{fill:var(--muted)} .ah-on{fill:var(--active)} .ah-start{fill:var(--ink)}
+.startarrow{stroke:var(--ink);stroke-width:1.6;fill:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);margin:0;padding:0;list-style:none}
+.legend li{display:flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--ink);background:var(--surface);display:inline-block;flex:none}
+.sw.on{background:var(--active)} .sw.dbl{box-shadow:inset 0 0 0 2px var(--surface),inset 0 0 0 3.5px var(--ink)}
+/* run */
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.controls select{width:auto}
+.tape{display:flex;gap:4px;overflow-x:auto;padding:4px 2px 8px}
+.tape .cellbox{flex:none;min-width:34px;height:40px;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--line);border-radius:5px;font-family:var(--font-mono);font-size:16px;background:var(--sunken)}
+.tape .done{color:var(--muted);text-decoration:line-through;opacity:.7}
+.tape .read{background:var(--active);border-color:var(--active-ink);color:var(--active-ink);font-weight:600}
+.tape .next{border-color:var(--ink)}
+.status{font-family:var(--font-mono);font-size:13.5px;background:var(--sunken);border:1px solid var(--line);border-radius:6px;padding:9px 12px;margin:0;overflow-wrap:anywhere}
+.verdict{display:flex;flex-wrap:wrap;align-items:center;gap:10px;border-radius:8px;padding:10px 12px;border:1px solid var(--line);background:var(--sunken);font-size:14px}
+.verdict .pill{font-family:var(--font-display);font-size:15px;letter-spacing:.06em;padding:3px 12px;border-radius:999px;border:1.5px solid currentColor;white-space:nowrap}
+.verdict.acc{background:var(--ok-soft);border-color:var(--ok)} .verdict.acc .pill{color:var(--ok)}
+.verdict.rej{background:var(--bad-soft);border-color:var(--bad)} .verdict.rej .pill{color:var(--bad)}
+.verdict.run .pill{color:var(--muted)}
+#log tbody tr{cursor:pointer}
+#log tbody tr.cur td,#log tbody tr.cur th{background:var(--active-soft)}
+#log tbody tr.future{opacity:.45}
+/* tree */
+#treebox{overflow:auto;max-height:460px;background:var(--sunken);border:1px solid var(--line);border-radius:8px}
+#tree{display:block}
+.tn rect{fill:var(--surface);stroke:var(--ink);stroke-width:1.3}
+.tn text{font-family:var(--font-mono);font-size:13px;fill:var(--ink);text-anchor:middle;dominant-baseline:central}
+.tn.accept rect{stroke:var(--ok);stroke-width:2.5;fill:var(--ok-soft)}
+.tn.reject rect,.tn.dead rect{stroke:var(--bad);stroke-dasharray:4 3}
+.tn.future,.te.future{opacity:.22}
+.te path{fill:none;stroke:var(--muted);stroke-width:1.3}
+.te.onpath path{stroke:var(--ok);stroke-width:2.6}
+.te text{font-family:var(--font-mono);font-size:12px;fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:var(--sunken);stroke-width:4px}
+.tag{font-family:var(--font-body);font-size:11.5px;dominant-baseline:central}
+.tag.accept{fill:var(--ok)} .tag.reject,.tag.dead{fill:var(--bad)} .tag.cut{fill:var(--muted)}
+/* tests */
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:1px 9px;border-radius:999px;border:1.5px solid currentColor;white-space:nowrap}
+.badge.pass{color:var(--ok);background:var(--ok-soft)} .badge.fail{color:var(--bad);background:var(--bad-soft)}
+.summary{font-weight:600}
+.summary.pass{color:var(--ok)} .summary.fail{color:var(--bad)}
+.linkbtn{padding:2px 8px;font-size:12px}
+pre.algo{font-family:var(--font-mono);font-size:13px;background:var(--sunken);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0;overflow-x:auto;line-height:1.6}
+.prose{max-width:65ch;margin:0;font-size:14px}
+@media (prefers-reduced-motion:no-preference){.node circle,.edge path,.tape .cellbox{transition:fill .18s,stroke .18s,background-color .18s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>DFA / NFA String Processing Visualizer</h1>
+      <p class="sub">CSET302 Automata Theory and Computability · Simulator Design, Topic 7</p>
+    </div>
+    <label class="f" style="min-width:min(100%,300px)">Load an example machine
+      <select id="preset"></select>
+    </label>
+  </header>
+
+  <div class="grid2">
+    <div class="col">
+      <section class="panel" aria-labelledby="h-def">
+        <div class="panel-head">
+          <h2 id="h-def">1. Define the machine</h2>
+          <div class="seg" role="group" aria-label="Machine type">
+            <button type="button" id="type-DFA" data-type="DFA" aria-pressed="true">DFA</button>
+            <button type="button" id="type-NFA" data-type="NFA" aria-pressed="false">NFA</button>
+            <button type="button" id="type-ENFA" data-type="ENFA" aria-pressed="false">ε-NFA</button>
+          </div>
+        </div>
+        <div class="row">
+          <label class="f" for="in-states">States Q (comma separated)
+            <input type="text" id="in-states" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="f" for="in-alpha">Alphabet Σ (single characters)
+            <input type="text" id="in-alpha" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+        <p class="hint">Transition table δ. Pick the start state in the → column and tick accepting states in the * column. In an NFA cell, separate several target states with commas. Leave a cell empty for no transition.</p>
+        <div class="scroll-x"><table id="ttable" aria-label="Transition table"></table></div>
+        <ul class="msgs" id="msgs" aria-live="polite"></ul>
+      </section>
+
+      <section class="panel" aria-labelledby="h-formal">
+        <h2 id="h-formal">Formal definition</h2>
+        <pre class="formal" id="formal"></pre>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel" aria-labelledby="h-dia">
+        <div class="panel-head">
+          <h2 id="h-dia">2. State diagram</h2>
+          <button type="button" id="btn-layout">Reset layout</button>
+        </div>
+        <svg id="diagram" viewBox="0 0 720 420" role="img" aria-label="State diagram of the machine"></svg>
+        <ul class="legend">
+          <li><span class="sw on"></span>active now</li>
+          <li><span class="sw dbl"></span>accepting state</li>
+          <li><span class="mono">→</span> start state</li>
+          <li>Drag a state to move it</li>
+        </ul>
+      </section>
+
+      <section class="panel" aria-labelledby="h-run">
+        <h2 id="h-run">3. Process a string</h2>
+        <div class="row">
+          <label class="f" for="in-w">Input string w (leave empty for ε)
+            <input type="text" id="in-w" autocomplete="off" spellcheck="false">
+          </label>
+          <button type="button" class="primary" id="btn-run">Run string</button>
+        </div>
+        <ul class="msgs" id="inmsgs" aria-live="polite"></ul>
+        <div class="tape" id="tape" aria-label="Input tape"></div>
+        <div class="controls">
+          <button type="button" id="btn-first" title="Go to start">⏮ Start</button>
+          <button type="button" id="btn-prev" title="Previous step">◀ Back</button>
+          <button type="button" class="primary" id="btn-play">▶ Play</button>
+          <button type="button" id="btn-next" title="Next step">Step ▶</button>
+          <button type="button" id="btn-last" title="Go to end">End ⏭</button>
+          <label class="f" for="speed" style="flex-direction:row;align-items:center;gap:6px">Speed
+            <select id="speed"><option value="1300">Slow</option><option value="750" selected>Normal</option><option value="320">Fast</option></select>
+          </label>
+        </div>
+        <p class="status" id="status" aria-live="polite"></p>
+        <div class="verdict run" id="verdict"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="grid-even">
+    <section class="panel" aria-labelledby="h-log">
+      <h2 id="h-log">4. Step-by-step trace</h2>
+      <p class="hint">Each row applies δ to the current set of active states. Click a row to jump to that step.</p>
+      <div class="scroll-x"><table id="log" aria-label="Step trace"></table></div>
+    </section>
+    <section class="panel" aria-labelledby="h-tree">
+      <h2 id="h-tree">5. Computation paths</h2>
+      <p class="hint" id="treehint"></p>
+      <div id="treebox"><svg id="tree" role="img" aria-label="Computation tree"></svg></div>
+    </section>
+  </div>
+
+  <div class="grid-even">
+    <section class="panel" aria-labelledby="h-tests">
+      <div class="panel-head">
+        <h2 id="h-tests">6. Test suite: expected vs actual</h2>
+        <button type="button" class="primary" id="btn-tests">Run all tests</button>
+      </div>
+      <label class="f" for="in-tests"><span>One test per line: <span class="mono">string, accept</span> or <span class="mono">string, reject</span>. Write ε for the empty string.</span>
+        <textarea id="in-tests" spellcheck="false"></textarea>
+      </label>
+      <p class="summary" id="tsummary" aria-live="polite"></p>
+      <div class="scroll-x"><table id="tresults" aria-label="Test results"></table></div>
+    </section>
+    <section class="panel" aria-labelledby="h-algo">
+      <h2 id="h-algo">How the simulator decides</h2>
+      <p class="prose">The simulator keeps a set S of every state the machine could be in. A DFA is the special case where S always holds exactly one state, so the same algorithm runs all three machine types.</p>
+<pre class="algo">S ← ε-closure({ q0 })
+for each symbol a in w, left to right:
+    T ← ⋃ δ(q, a)   for every q in S
+    S ← ε-closure(T)
+accept w  if  S ∩ F ≠ ∅
+reject w  otherwise
+
+ε-closure(T): T plus every state reachable
+from T using only ε-transitions</pre>
+      <p class="prose">For a DFA or a plain NFA there are no ε-transitions, so ε-closure(T) = T. If S becomes empty, every computation path has died and the string is rejected. Running time is O(|w| · |Q|²) in the worst case.</p>
+    </section>
+  </div>
+</div>
+
+<script id="engine">
+"use strict";
+/* ================= ENGINE: pure functions, no DOM =================
+   Machine object: { type: "DFA" | "NFA" | "ENFA", states: [..], alphabet: [..],
+                     start: "q0", accept: Set, delta: { key(q,a): [targets] } }   */
+const EPS = "ε";
+
+function parseList(text){
+  return String(text || "").split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+}
+function uniq(arr){ return Array.from(new Set(arr)); }
+function key(q, a){ return q + "\u0001" + a; }
+
+/* A table cell holds zero or more target states: "", "q1", "q0, q2", "{q0,q2}", "∅" */
+function parseTargets(text){
+  const t = String(text || "").replace(/[{}]/g, "").trim();
+  if (!t || t === "-" || t === "–" || t === "∅") return [];
+  return uniq(parseList(t));
+}
+
+function buildMachine(def){
+  const delta = {};
+  const symbols = def.type === "ENFA" ? def.alphabet.concat([EPS]) : def.alphabet.slice();
+  for (const q of def.states)
+    for (const a of symbols)
+      delta[key(q, a)] = parseTargets(def.cells[key(q, a)]);
+  return { type: def.type, states: def.states.slice(), alphabet: def.alphabet.slice(),
+           start: def.start, accept: new Set(def.accept), delta: delta };
+}
+
+/* δ(q, a) as a list of states (empty list = no transition) */
+function move(m, q, a){ return m.delta[key(q, a)] || []; }
+
+/* Keep sets in the order the user listed the states, so output is stable. */
+function ordered(m, iterable){
+  const s = new Set(iterable);
+  return m.states.filter(q => s.has(q));
+}
+
+function validateMachine(m, rawStates, rawAlphabet){
+  const errors = [], warnings = [];
+  const Q = new Set(m.states);
+  if (m.states.length === 0) errors.push("Q is empty. Add at least one state, for example q0.");
+  const dupS = (rawStates || []).filter((q, i, a) => a.indexOf(q) !== i);
+  if (dupS.length) errors.push("State " + uniq(dupS).join(", ") + " is listed more than once in Q.");
+  if (m.alphabet.length === 0) errors.push("Σ is empty. Add at least one input symbol, for example 0, 1.");
+  for (const a of uniq(rawAlphabet || m.alphabet)){
+    if (a === EPS) errors.push("ε cannot be an input symbol. Choose the ε-NFA type to get an ε column.");
+    else if (Array.from(a).length !== 1) errors.push('Symbol "' + a + '" is longer than one character. Use single characters in Σ.');
+  }
+  const dupA = (rawAlphabet || []).filter((a, i, arr) => arr.indexOf(a) !== i);
+  if (dupA.length) errors.push("Symbol " + uniq(dupA).join(", ") + " is listed more than once in Σ.");
+  if (m.states.length && !Q.has(m.start)) errors.push("Pick a start state in the → column.");
+
+  const symbols = m.type === "ENFA" ? m.alphabet.concat([EPS]) : m.alphabet;
+  for (const q of m.states){
+    for (const a of symbols){
+      const targets = move(m, q, a);
+      for (const t of targets)
+        if (!Q.has(t)) errors.push("δ(" + q + ", " + a + ') points to "' + t + '", which is not in Q.');
+      if (m.type === "DFA"){
+        if (targets.length > 1)
+          errors.push("δ(" + q + ", " + a + ") has " + targets.length + " targets. A DFA allows exactly one. Keep one target or switch the type to NFA.");
+        if (targets.length === 0)
+          warnings.push("δ(" + q + ", " + a + ") is empty. It is treated as a move to an implicit trap state, so the string is rejected there.");
+      }
+    }
+  }
+  if (!errors.length){
+    if (m.accept.size === 0) warnings.push("F is empty, so this machine rejects every string.");
+    const reach = new Set([m.start]), stack = [m.start];
+    while (stack.length){
+      const q = stack.pop();
+      for (const a of symbols) for (const t of move(m, q, a)) if (!reach.has(t)){ reach.add(t); stack.push(t); }
+    }
+    const un = m.states.filter(q => !reach.has(q));
+    if (un.length) warnings.push((un.length === 1 ? "State " + un[0] + " is" : "States " + un.join(", ") + " are") + " unreachable from the start state.");
+  }
+  return { errors: errors, warnings: warnings };
+}
+
+/* Returns the symbols of w that are not in Σ (empty list = valid input). */
+function invalidSymbols(m, w){
+  const S = new Set(m.alphabet);
+  return uniq(Array.from(w).filter(ch => !S.has(ch)));
+}
+
+/* ε-closure of a set of states. Also reports which ε-edges were followed. */
+function epsClosure(m, states){
+  if (m.type !== "ENFA") return { states: ordered(m, states), edges: [] };
+  const closure = new Set(states), stack = Array.from(states), edges = [];
+  while (stack.length){
+    const p = stack.pop();
+    for (const q of move(m, p, EPS)){
+      edges.push([p, q]);
+      if (!closure.has(q)){ closure.add(q); stack.push(q); }
+    }
+  }
+  return { states: ordered(m, closure), edges: edges };
+}
+
+/* Main simulation. steps[k] describes the machine after reading k symbols. */
+function simulate(m, w){
+  const input = Array.from(w), steps = [];
+  const c0 = epsClosure(m, [m.start]);
+  steps.push({ index: 0, symbol: null, from: [], moved: [m.start], states: c0.states, symEdges: [], epsEdges: c0.edges });
+  let diedAt = -1;
+  for (let i = 0; i < input.length; i++){
+    const a = input[i], prev = steps[i].states, moved = new Set(), symEdges = [];
+    for (const p of prev)
+      for (const q of move(m, p, a)){ moved.add(q); symEdges.push([p, q]); }
+    const c = epsClosure(m, moved);
+    steps.push({ index: i + 1, symbol: a, from: prev, moved: ordered(m, moved), states: c.states, symEdges: symEdges, epsEdges: c.edges });
+    if (c.states.length === 0 && diedAt < 0) diedAt = i + 1;
+  }
+  const finalStates = steps[steps.length - 1].states;
+  const accepting = finalStates.filter(q => m.accept.has(q));
+  return { input: input, steps: steps, finalStates: finalStates, acceptingStates: accepting,
+           accepted: accepting.length > 0, diedAt: diedAt };
+}
+
+/* Computation tree: every individual path the machine can follow on w.
+   Node = configuration (state, symbols consumed). Built breadth-first with a size cap. */
+function buildTree(m, w, cap){
+  cap = cap || 300;
+  const input = Array.from(w), n = input.length;
+  const root = { state: m.start, pos: 0, via: null, parent: null, children: [], seen: new Set([m.start]) };
+  const queue = [root], all = [root];
+  let truncated = false;
+  while (queue.length){
+    const node = queue.shift(), kids = [];
+    if (m.type === "ENFA")
+      for (const q of move(m, node.state, EPS))
+        if (!node.seen.has(q))   /* do not walk an ε-cycle twice on the same path */
+          kids.push({ state: q, pos: node.pos, via: EPS, seen: new Set(Array.from(node.seen).concat([q])) });
+    if (node.pos < n)
+      for (const q of move(m, node.state, input[node.pos]))
+        kids.push({ state: q, pos: node.pos + 1, via: input[node.pos], seen: new Set([q]) });
+    for (const k of kids){
+      if (all.length >= cap){ truncated = true; node.cut = true; break; }
+      k.parent = node; k.children = [];
+      node.children.push(k); queue.push(k); all.push(k);
+    }
+  }
+  let winner = null;
+  for (const node of all){
+    if (node.pos === n && m.accept.has(node.state)){ node.status = "accept"; if (!winner) winner = node; }
+    else if (node.children.length) node.status = "inner";
+    else if (node.cut) node.status = "cut";
+    else node.status = node.pos === n ? "reject" : "dead";
+  }
+  for (let p = winner; p; p = p.parent) p.onPath = true;
+  return { root: root, count: all.length, truncated: truncated, accepted: !!winner };
+}
+
+function setText(arr){ return arr.length ? "{" + arr.join(", ") + "}" : "∅"; }
+
+/* Parse the test-suite text. Each line: "<string>, accept|reject". */
+function parseTests(text){
+  const out = [];
+  String(text || "").split(/\r?\n/).forEach(function(line){
+    if (!line.trim()) return;
+    const i = line.lastIndexOf(",");
+    if (i < 0){ out.push({ raw: line.trim(), error: "Add the expected result after a comma: accept or reject." }); return; }
+    let w = line.slice(0, i).trim();
+    const exp = line.slice(i + 1).trim().toLowerCase();
+    if (w === EPS || w === "eps" || w === '""') w = "";
+    let expected;
+    if (/^(a|acc|accept|accepted|yes|y|true|1)$/.test(exp)) expected = true;
+    else if (/^(r|rej|reject|rejected|no|n|false|0)$/.test(exp)) expected = false;
+    else { out.push({ raw: line.trim(), error: 'Expected result "' + exp + '" is not accept or reject.' }); return; }
+    out.push({ w: w, expected: expected });
+  });
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { EPS, parseList, uniq, key, parseTargets, buildMachine, move, validateMachine, invalidSymbols, epsClosure, simulate, buildTree, setText, parseTests };
+</script>
+
+<script>
+"use strict";
+/* ================= UI ================= */
+const PRESETS = [
+  { name: 'DFA · strings ending in 01', type: "DFA", states: "q0, q1, q2", alphabet: "0, 1", start: "q0", accept: ["q2"],
+    t: { q0: { "0": "q1", "1": "q0" }, q1: { "0": "q1", "1": "q2" }, q2: { "0": "q1", "1": "q0" } },
+    w: "110101", tests: "01, accept\n1101, accept\n0101, accept\nε, reject\n0, reject\n10, reject\n011, reject" },
+  { name: 'DFA · even number of 0s', type: "DFA", states: "even, odd", alphabet: "0, 1", start: "even", accept: ["even"],
+    t: { even: { "0": "odd", "1": "even" }, odd: { "0": "even", "1": "odd" } },
+    w: "10010", tests: "ε, accept\n00, accept\n1010, accept\n111, accept\n0, reject\n000, reject\n10010, reject" },
+  { name: 'NFA · third symbol from the end is 1', type: "NFA", states: "q0, q1, q2, q3", alphabet: "0, 1", start: "q0", accept: ["q3"],
+    t: { q0: { "0": "q0", "1": "q0, q1" }, q1: { "0": "q2", "1": "q2" }, q2: { "0": "q3", "1": "q3" }, q3: {} },
+    w: "0110", tests: "100, accept\n0111, accept\n0100, accept\n1011, reject\n11, reject\nε, reject\n000, reject" },
+  { name: 'NFA · contains the substring ab', type: "NFA", states: "s, a, f", alphabet: "a, b", start: "s", accept: ["f"],
+    t: { s: { a: "s, a", b: "s" }, a: { b: "f" }, f: { a: "f", b: "f" } },
+    w: "baab", tests: "ab, accept\nbaab, accept\naabb, accept\nε, reject\nba, reject\nbbb, reject\naaa, reject" },
+  { name: 'ε-NFA · a*b*c*', type: "ENFA", states: "q0, q1, q2", alphabet: "a, b, c", start: "q0", accept: ["q2"],
+    t: { q0: { a: "q0", "ε": "q1" }, q1: { b: "q1", "ε": "q2" }, q2: { c: "q2" } },
+    w: "aabc", tests: "ε, accept\nabc, accept\naabbcc, accept\nac, accept\nb, accept\nba, reject\ncab, reject\nabca, reject" },
+  { name: 'ε-NFA · (ab)* ∪ a*', type: "ENFA", states: "q0, q1, q2, q3", alphabet: "a, b", start: "q0", accept: ["q1", "q3"],
+    t: { q0: { "ε": "q1, q3" }, q1: { a: "q2" }, q2: { b: "q1" }, q3: { a: "q3" } },
+    w: "abab", tests: "ε, accept\nab, accept\nabab, accept\naaa, accept\na, accept\naba, reject\nb, reject\naab, reject" }
+];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* Editable definition (raw text of each cell is kept so typing is never rewritten) */
+const DEF = { type: "DFA", states: [], alphabet: [], rawStates: [], rawAlphabet: [], start: "", accept: [], cells: {} };
+let MACHINE = null, VALID = false;
+let SIM = null, TREE = null, CUR = 0, TIMER = null;
+let POS = {}, DRAG = null;
+
+function symbolsOf(){ return DEF.type === "ENFA" ? DEF.alphabet.concat([EPS]) : DEF.alphabet.slice(); }
+
+function loadPreset(i){
+  const p = PRESETS[i];
+  stopPlay();
+  DEF.type = p.type;
+  DEF.rawStates = parseList(p.states); DEF.states = uniq(DEF.rawStates);
+  DEF.rawAlphabet = parseList(p.alphabet); DEF.alphabet = uniq(DEF.rawAlphabet);
+  DEF.start = p.start; DEF.accept = p.accept.slice(); DEF.cells = {};
+  for (const q in p.t) for (const a in p.t[q]) DEF.cells[key(q, a)] = p.t[q][a];
+  POS = {};
+  $("in-states").value = p.states; $("in-alpha").value = p.alphabet;
+  $("in-w").value = p.w; $("in-tests").value = p.tests;
+  renderTypeButtons(); renderTable(); refresh();
+}
+
+function renderTypeButtons(){
+  document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.type === DEF.type)));
+}
+
+function renderTable(){
+  const syms = symbolsOf();
+  let h = '<thead><tr><th class="c" title="Start state">→</th><th class="c" title="Accepting state">*</th><th>State</th>' +
+          syms.map(a => "<th>δ(·, " + esc(a) + ")</th>").join("") + "</tr></thead><tbody>";
+  DEF.states.forEach(function(q, i){
+    h += '<tr><td class="c"><input type="radio" name="start" id="st-' + i + '" data-q="' + esc(q) + '"' + (q === DEF.start ? " checked" : "") + ' aria-label="Start state ' + esc(q) + '"></td>' +
+         '<td class="c"><input type="checkbox" id="ac-' + i + '" data-q="' + esc(q) + '"' + (DEF.accept.indexOf(q) >= 0 ? " checked" : "") + ' aria-label="Accepting state ' + esc(q) + '"></td>' +
+         '<th scope="row">' + esc(q) + "</th>";
+    syms.forEach(function(a, j){
+      h += '<td><input type="text" class="cell" id="c-' + i + "-" + j + '" data-q="' + esc(q) + '" data-a="' + esc(a) + '" value="' + esc(DEF.cells[key(q, a)] || "") +
+           '" placeholder="' + (DEF.type === "DFA" ? "–" : "∅") + '" autocomplete="off" spellcheck="false" aria-label="delta of ' + esc(q) + " on " + esc(a) + '"></td>';
+    });
+    h += "</tr>";
+  });
+  $("ttable").innerHTML = h + "</tbody>";
+}
+
+/* Re-read the definition, validate it and redraw everything that depends on it. */
+function refresh(){
+  MACHINE = buildMachine(DEF);
+  const v = validateMachine(MACHINE, DEF.rawStates, DEF.rawAlphabet);
+  VALID = v.errors.length === 0;
+  let h = v.errors.map(e => '<li class="err">' + esc(e) + "</li>").join("") + v.warnings.map(w => '<li class="wrn">' + esc(w) + "</li>").join("");
+  if (!v.errors.length && !v.warnings.length) h = '<li class="fine">The machine definition is valid.</li>';
+  $("msgs").innerHTML = h;
+  /* mark the cells that break a rule */
+  const Q = new Set(DEF.states);
+  document.querySelectorAll("#ttable input.cell").forEach(function(inp){
+    const t = parseTargets(inp.value);
+    inp.classList.toggle("bad", t.some(x => !Q.has(x)) || (DEF.type === "DFA" && t.length > 1));
+  });
+  renderFormal();
+  runString();
+  runTests();
+}
+
+function renderFormal(){
+  const m = MACHINE, name = m.type === "ENFA" ? "ε-NFA" : m.type;
+  const lines = [];
+  lines.push(name + "  M = (Q, Σ, δ, q0, F)");
+  lines.push("Q  = " + setText(m.states));
+  lines.push("Σ  = " + setText(m.alphabet));
+  lines.push("q0 = " + (m.start || "?"));
+  lines.push("F  = " + setText(ordered(m, m.accept)));
+  lines.push(m.type === "DFA" ? "δ  : Q × Σ → Q" : m.type === "NFA" ? "δ  : Q × Σ → 2^Q" : "δ  : Q × (Σ ∪ {ε}) → 2^Q");
+  for (const q of m.states) for (const a of symbolsOf()){
+    const t = move(m, q, a);
+    if (!t.length) continue;
+    lines.push("   δ(" + q + ", " + a + ") = " + (m.type === "DFA" ? t.join(", ") : setText(t)));
+  }
+  $("formal").textContent = lines.join("\n");
+}
+
+/* ---------- diagram ---------- */
+const DW = 720, DH = 420, R = 24;
+function defaultPos(i, n){
+  if (n === 1) return { x: DW / 2, y: DH / 2 };
+  const ang = 2 * Math.PI * i / n;
+  return { x: DW / 2 - 235 * Math.cos(ang), y: DH / 2 - (n === 2 ? 0 : 135) * Math.sin(ang) };
+}
+function ensurePositions(){
+  DEF.states.forEach(function(q, i){ if (!POS[q]) POS[q] = defaultPos(i, DEF.states.length); });
+}
+function renderDiagram(){
+  ensurePositions();
+  const m = MACHINE, svg = $("diagram"), Q = new Set(m.states);
+  const step = SIM ? SIM.steps[CUR] : null;
+  const onStates = new Set(step ? step.states : []);
+  const onEdges = new Set();
+  if (step){ step.symEdges.forEach(e => onEdges.add(key(e[0], e[1]) + "\u0002s")); step.epsEdges.forEach(e => onEdges.add(key(e[0], e[1]) + "\u0002e")); }
+  let cx = 0, cy = 0;
+  m.states.forEach(q => { cx += POS[q].x; cy += POS[q].y; });
+  cx /= m.states.length || 1; cy /= m.states.length || 1;
+  function outward(q){
+    const dx = POS[q].x - cx, dy = POS[q].y - cy, len = Math.hypot(dx, dy);
+    return len < 2 ? { x: -1, y: 0 } : { x: dx / len, y: dy / len };
+  }
+  /* group parallel transitions p -> q into one arrow with a combined label */
+  const groups = new Map();
+  for (const p of m.states) for (const a of symbolsOf()) for (const q of move(m, p, a)){
+    if (!Q.has(q)) continue;
+    const k = key(p, q);
+    if (!groups.has(k)) groups.set(k, { p: p, q: q, labels: [], on: false });
+    const g = groups.get(k);
+    g.labels.push(a);
+    if (onEdges.has(k + (a === EPS ? "\u0002e" : "\u0002s")) && (a === EPS || (step && a === step.symbol))) g.on = true;
+  }
+  let h = '<defs>' +
+    '<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>' +
+    '<marker id="ah-on" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah-on"/></marker>' +
+    '<marker id="ah-start" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah-start"/></marker></defs>';
+  const f = n => n.toFixed(1);
+  groups.forEach(function(g){
+    const A = POS[g.p], B = POS[g.q], label = esc(g.labels.join(", "));
+    let d, lx, ly;
+    if (g.p === g.q){
+      const o = outward(g.p);
+      const th = Math.atan2(o.y, o.x) + (g.p === m.start ? 1.15 : 0);
+      const pt = (ang, rad) => ({ x: A.x + rad * Math.cos(ang), y: A.y + rad * Math.sin(ang) });
+      const s = pt(th - 0.42, R), e = pt(th + 0.42, R + 3), c1 = pt(th - 0.7, R + 56), c2 = pt(th + 0.7, R + 56);
+      d = "M" + f(s.x) + "," + f(s.y) + " C" + f(c1.x) + "," + f(c1.y) + " " + f(c2.x) + "," + f(c2.y) + " " + f(e.x) + "," + f(e.y);
+      const lp = pt(th, R + 54); lx = lp.x; ly = lp.y;
+    } else {
+      const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+      const curve = groups.has(key(g.q, g.p)) ? 30 : 0;
+      const c = { x: (A.x + B.x) / 2 + nx * curve * 2, y: (A.y + B.y) / 2 + ny * curve * 2 };
+      const trim = (P, rad) => { const ux = c.x - P.x, uy = c.y - P.y, l = Math.hypot(ux, uy) || 1; return { x: P.x + ux / l * rad, y: P.y + uy / l * rad }; };
+      const s = trim(A, R), e = trim(B, R + 3);
+      d = "M" + f(s.x) + "," + f(s.y) + " Q" + f(c.x) + "," + f(c.y) + " " + f(e.x) + "," + f(e.y);
+      lx = (s.x + 2 * c.x + e.x) / 4 + nx * 13; ly = (s.y + 2 * c.y + e.y) / 4 + ny * 13;
+    }
+    h += '<g class="edge' + (g.on ? " on" : "") + '"><path d="' + d + '" marker-end="url(#' + (g.on ? "ah-on" : "ah") + ')"/><text x="' + f(lx) + '" y="' + f(ly) + '">' + label + "</text></g>";
+  });
+  if (Q.has(m.start)){
+    const o = outward(m.start), P = POS[m.start];
+    h += '<path class="startarrow" marker-end="url(#ah-start)" d="M' + f(P.x + o.x * (R + 40)) + "," + f(P.y + o.y * (R + 40)) + " L" + f(P.x + o.x * (R + 3)) + "," + f(P.y + o.y * (R + 3)) + '"/>';
+  }
+  m.states.forEach(function(q){
+    const P = POS[q];
+    h += '<g class="node' + (onStates.has(q) ? " on" : "") + '" data-q="' + esc(q) + '" transform="translate(' + f(P.x) + "," + f(P.y) + ')">' +
+         '<circle r="' + R + '"/>' + (m.accept.has(q) ? '<circle r="' + (R - 5) + '"/>' : "") +
+         '<text style="font-size:' + (q.length > 4 ? 10 : q.length > 2 ? 12 : 14) + 'px">' + esc(q) + "</text></g>";
+  });
+  svg.innerHTML = h;
+}
+function svgPoint(evt){
+  const svg = $("diagram"), p = svg.createSVGPoint();
+  p.x = evt.clientX; p.y = evt.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+/* ---------- run a string ---------- */
+function readInput(){
+  let w = $("in-w").value.trim();
+  if (w === EPS) w = "";
+  return w;
+}
+function runString(){
+  stopPlay();
+  SIM = null; TREE = null; CUR = 0;
+  const w = readInput();
+  let msg = "";
+  if (!VALID) msg = '<li class="err">Fix the errors in the machine definition, then run the string.</li>';
+  else {
+    const bad = invalidSymbols(MACHINE, w);
+    if (bad.length) msg = '<li class="err">' + esc(bad.map(c => '"' + c + '"').join(", ")) + (bad.length === 1 ? " is" : " are") + " not in Σ = " + esc(setText(MACHINE.alphabet)) + ". Remove it from the string or add it to the alphabet.</li>";
+  }
+  $("inmsgs").innerHTML = msg;
+  if (!msg){
+    SIM = simulate(MACHINE, w);
+    TREE = buildTree(MACHINE, w, 300);
+    CUR = SIM.steps.length - 1;
+  }
+  renderLog(); renderTree(); renderStep();
+}
+
+function describe(k){
+  const m = MACHINE, s = SIM.steps[k];
+  if (k === 0){
+    if (m.type === "DFA") return "Start in " + m.start + ".";
+    if (m.type === "NFA") return "Start with active set {" + m.start + "}.";
+    return "Start in " + m.start + ". ε-closure({" + m.start + "}) = " + setText(s.states) + ".";
+  }
+  const a = s.symbol;
+  if (!s.from.length) return "Read " + a + ": no active state is left, so nothing can move.";
+  if (m.type === "DFA")
+    return s.states.length ? "Read " + a + ": δ(" + s.from[0] + ", " + a + ") = " + s.states[0] + "."
+                           : "Read " + a + ": δ(" + s.from[0] + ", " + a + ") is undefined. The machine is stuck in the trap state.";
+  let t = "Read " + a + ": δ(" + setText(s.from) + ", " + a + ") = " + setText(s.moved) + ".";
+  if (m.type === "ENFA" && s.moved.length) t += " ε-closure = " + setText(s.states) + ".";
+  if (!s.states.length) t += " Every path has died.";
+  return t;
+}
+function verdictReason(){
+  const m = MACHINE, fin = SIM.finalStates;
+  if (SIM.accepted){
+    if (m.type === "DFA") return "All input is read and the machine halts in " + fin[0] + ", an accepting state.";
+    return "All input is read and at least one path ends in an accepting state: " + setText(fin) + " ∩ F = " + setText(SIM.acceptingStates) + ".";
+  }
+  if (!fin.length){
+    const k = SIM.diedAt;
+    return m.type === "DFA" ? "The machine got stuck at symbol " + k + " (" + SIM.steps[k].symbol + ") because no transition is defined."
+                            : "Every computation path died at symbol " + k + " (" + SIM.steps[k].symbol + "), before the input was fully read.";
+  }
+  if (m.type === "DFA") return "All input is read but the machine halts in " + fin[0] + ", which is not an accepting state.";
+  return "All input is read but no path ends in an accepting state: " + setText(fin) + " ∩ F = ∅.";
+}
+
+function renderStep(){
+  renderDiagram();
+  const tape = $("tape"), status = $("status"), verdict = $("verdict");
+  const btns = ["btn-first", "btn-prev", "btn-play", "btn-next", "btn-last"];
+  if (!SIM){
+    tape.innerHTML = ""; status.textContent = "No run to show yet.";
+    verdict.className = "verdict run"; verdict.innerHTML = '<span class="pill">NO RESULT</span><span>Enter a valid machine and string.</span>';
+    btns.forEach(b => $(b).disabled = true);
+    return;
+  }
+  const n = SIM.input.length, last = SIM.steps.length - 1;
+  btns.forEach(b => $(b).disabled = false);
+  $("btn-first").disabled = $("btn-prev").disabled = CUR === 0;
+  $("btn-next").disabled = $("btn-last").disabled = CUR === last;
+  /* tape */
+  if (n === 0) tape.innerHTML = '<div class="cellbox read" title="empty string">ε</div>';
+  else tape.innerHTML = SIM.input.map((ch, i) => '<div class="cellbox ' + (i < CUR - 1 ? "done" : i === CUR - 1 ? "read" : i === CUR ? "next" : "") + '">' + esc(ch) + "</div>").join("");
+  const readCell = tape.querySelector(".read");
+  if (readCell && tape.scrollWidth > tape.clientWidth) tape.scrollLeft = Math.max(0, readCell.offsetLeft - tape.clientWidth / 2);
+  /* status */
+  status.textContent = "Step " + CUR + " of " + last + " · " + describe(CUR) + "  Remaining input: " + (SIM.input.slice(CUR).join("") || "ε");
+  /* verdict */
+  if (CUR === last){
+    verdict.className = "verdict " + (SIM.accepted ? "acc" : "rej");
+    verdict.innerHTML = '<span class="pill">' + (SIM.accepted ? "ACCEPTED" : "REJECTED") + "</span><span>" + esc(verdictReason()) + "</span>";
+  } else {
+    verdict.className = "verdict run";
+    verdict.innerHTML = '<span class="pill">RUNNING</span><span>Active states: <span class="mono">' + esc(setText(SIM.steps[CUR].states)) + "</span>. The result appears after the last symbol.</span>";
+  }
+  /* log + tree emphasis */
+  document.querySelectorAll("#log tbody tr").forEach(function(tr, i){ tr.classList.toggle("cur", i === CUR); tr.classList.toggle("future", i > CUR); });
+  document.querySelectorAll("#tree [data-pos]").forEach(function(el){ el.classList.toggle("future", Number(el.dataset.pos) > CUR); });
+}
+
+function renderLog(){
+  const tbl = $("log");
+  if (!SIM){ tbl.innerHTML = ""; return; }
+  const m = MACHINE, enfa = m.type === "ENFA", dfa = m.type === "DFA";
+  const one = arr => dfa ? (arr.length ? arr[0] : "trap") : setText(arr);
+  let h = "<thead><tr><th>Step</th><th>Read</th><th>" + (dfa ? "From state" : "From set") + "</th><th>δ gives</th>" + (enfa ? "<th>After ε-closure</th>" : "") + "<th>Remaining</th></tr></thead><tbody>";
+  SIM.steps.forEach(function(s, k){
+    h += '<tr data-k="' + k + '"><th scope="row">' + k + '</th><td class="m">' + (k ? esc(s.symbol) : "start") + '</td><td class="m">' + (k ? esc(one(s.from)) : "") +
+         '</td><td class="m">' + esc(one(s.moved)) + "</td>" + (enfa ? '<td class="m">' + esc(setText(s.states)) + "</td>" : "") +
+         '<td class="m">' + (esc(SIM.input.slice(k).join("")) || "ε") + "</td></tr>";
+  });
+  tbl.innerHTML = h + "</tbody>";
+}
+
+/* ---------- computation tree ---------- */
+function renderTree(){
+  const svg = $("tree"), hint = $("treehint");
+  if (!TREE){ svg.innerHTML = ""; svg.setAttribute("width", 0); svg.setAttribute("height", 0); hint.textContent = "Run a string to see every path the machine can take."; return; }
+  const COL = 96, ROW = 38, PADX = 14, PADY = 22, NH = 24;
+  let leaf = 0, maxDepth = 0;
+  const nodeW = n => Math.max(38, 14 + n.state.length * 8.2);
+  (function place(n, depth){
+    n.x = PADX + depth * COL; maxDepth = Math.max(maxDepth, depth);
+    if (!n.children.length){ n.y = PADY + leaf * ROW; leaf++; }
+    else { n.children.forEach(c => place(c, depth + 1)); n.y = (n.children[0].y + n.children[n.children.length - 1].y) / 2; }
+  })(TREE.root, 0);
+  const W = PADX * 2 + maxDepth * COL + 150, H = PADY * 2 + Math.max(0, leaf - 1) * ROW;
+  const tagText = { accept: "accept ✓", reject: "reject", dead: "dead ✕", cut: "…" };
+  let edges = "", nodes = "";
+  (function draw(n){
+    const w = nodeW(n);
+    n.children.forEach(function(c){
+      const x1 = n.x + w, x2 = c.x, mx = (x1 + x2) / 2;
+      edges += '<g class="te' + (c.onPath ? " onpath" : "") + '" data-pos="' + c.pos + '"><path d="M' + x1.toFixed(1) + "," + n.y.toFixed(1) + " C" + mx.toFixed(1) + "," + n.y.toFixed(1) + " " + mx.toFixed(1) + "," + c.y.toFixed(1) + " " + x2.toFixed(1) + "," + c.y.toFixed(1) +
+               '"/><text x="' + (x2 - 14).toFixed(1) + '" y="' + (c.y - 7).toFixed(1) + '">' + esc(c.via) + "</text></g>";
+      draw(c);
+    });
+    nodes += '<g class="tn ' + n.status + '" data-pos="' + n.pos + '"><rect x="' + n.x + '" y="' + (n.y - NH / 2).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + NH + '" rx="12"/>' +
+             '<text x="' + (n.x + w / 2).toFixed(1) + '" y="' + n.y.toFixed(1) + '">' + esc(n.state) + "</text>" +
+             (tagText[n.status] ? '<text class="tag ' + n.status + '" style="text-anchor:start" x="' + (n.x + w + 8).toFixed(1) + '" y="' + n.y.toFixed(1) + '">' + tagText[n.status] + "</text>" : "") + "</g>";
+  })(TREE.root);
+  svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.innerHTML = edges + nodes;
+  const kind = MACHINE.type === "DFA" ? "A DFA follows exactly one path." : "Each branch is one choice the machine can make. The string is accepted if any branch ends in an accepting state after all input is read.";
+  hint.textContent = kind + (TREE.accepted ? " The green path is an accepting computation." : "") + (TREE.truncated ? " The tree is cut off at " + TREE.count + " nodes to stay readable; the trace table is still complete." : "");
+}
+
+/* ---------- playback ---------- */
+function go(k){ if (!SIM) return; CUR = Math.max(0, Math.min(SIM.steps.length - 1, k)); renderStep(); }
+function stopPlay(){ if (TIMER){ clearInterval(TIMER); TIMER = null; } $("btn-play").textContent = "▶ Play"; }
+function togglePlay(){
+  if (!SIM) return;
+  if (TIMER){ stopPlay(); return; }
+  if (CUR === SIM.steps.length - 1) go(0);
+  $("btn-play").textContent = "⏸ Pause";
+  TIMER = setInterval(function(){
+    if (CUR >= SIM.steps.length - 1){ stopPlay(); return; }
+    go(CUR + 1);
+    if (CUR >= SIM.steps.length - 1) stopPlay();
+  }, Number($("speed").value));
+}
+
+/* ---------- test suite ---------- */
+function runTests(){
+  const tbl = $("tresults"), sum = $("tsummary");
+  const tests = parseTests($("in-tests").value);
+  if (!VALID){ tbl.innerHTML = ""; sum.className = "summary fail"; sum.textContent = "Fix the machine definition to run the tests."; return; }
+  if (!tests.length){ tbl.innerHTML = ""; sum.className = "summary"; sum.textContent = "No tests yet. Add one per line above."; return; }
+  let pass = 0;
+  let h = "<thead><tr><th>#</th><th>String</th><th>Expected</th><th>Actual</th><th>Final states</th><th>Result</th><th></th></tr></thead><tbody>";
+  tests.forEach(function(t, i){
+    let actual = "", fin = "", ok = false, view = "";
+    if (t.error){ actual = t.error; }
+    else {
+      const bad = invalidSymbols(MACHINE, t.w);
+      if (bad.length) actual = "invalid input: " + bad.join(", ") + " not in Σ";
+      else {
+        const r = simulate(MACHINE, t.w);
+        actual = r.accepted ? "accept" : "reject"; fin = setText(r.finalStates); ok = r.accepted === t.expected;
+        view = '<button type="button" class="linkbtn" data-w="' + esc(t.w) + '">View</button>';
+      }
+    }
+    if (ok) pass++;
+    h += "<tr><td>" + (i + 1) + '</td><td class="m">' + (t.error ? esc(t.raw) : (esc(t.w) || "ε")) + "</td><td>" + (t.error ? "" : t.expected ? "accept" : "reject") + "</td><td>" + esc(actual) +
+         '</td><td class="m">' + esc(fin) + '</td><td><span class="badge ' + (ok ? "pass" : "fail") + '">' + (ok ? "PASS" : "FAIL") + "</span></td><td>" + view + "</td></tr>";
+  });
+  tbl.innerHTML = h + "</tbody>";
+  sum.className = "summary " + (pass === tests.length ? "pass" : "fail");
+  sum.textContent = pass + " of " + tests.length + " tests passed" + (pass === tests.length ? "." : ". Check the rows marked FAIL.");
+}
+
+/* ---------- events ---------- */
+$("preset").innerHTML = PRESETS.map((p, i) => '<option value="' + i + '">' + esc(p.name) + "</option>").join("");
+$("preset").addEventListener("change", e => loadPreset(Number(e.target.value)));
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", function(){
+  DEF.type = b.dataset.type; renderTypeButtons(); renderTable(); refresh();
+}));
+$("in-states").addEventListener("change", function(e){
+  DEF.rawStates = parseList(e.target.value); DEF.states = uniq(DEF.rawStates);
+  if (DEF.states.indexOf(DEF.start) < 0) DEF.start = DEF.states[0] || "";
+  DEF.accept = DEF.accept.filter(q => DEF.states.indexOf(q) >= 0);
+  for (const q in POS) if (DEF.states.indexOf(q) < 0) delete POS[q];
+  renderTable(); refresh();
+});
+$("in-alpha").addEventListener("change", function(e){
+  DEF.rawAlphabet = parseList(e.target.value); DEF.alphabet = uniq(DEF.rawAlphabet);
+  renderTable(); refresh();
+});
+$("ttable").addEventListener("input", function(e){
+  const t = e.target;
+  if (t.classList.contains("cell")) DEF.cells[key(t.dataset.q, t.dataset.a)] = t.value;
+  else if (t.type === "radio") DEF.start = t.dataset.q;
+  else if (t.type === "checkbox") DEF.accept = Array.from(document.querySelectorAll('#ttable input[type=checkbox]:checked')).map(c => c.dataset.q);
+  refresh();
+});
+$("btn-layout").addEventListener("click", function(){ POS = {}; renderDiagram(); });
+$("btn-run").addEventListener("click", function(){ runString(); if (SIM){ go(0); togglePlay(); } });
+$("in-w").addEventListener("keydown", function(e){ if (e.key === "Enter"){ e.preventDefault(); $("btn-run").click(); } });
+$("btn-first").addEventListener("click", function(){ stopPlay(); go(0); });
+$("btn-prev").addEventListener("click", function(){ stopPlay(); go(CUR - 1); });
+$("btn-next").addEventListener("click", function(){ stopPlay(); go(CUR + 1); });
+$("btn-last").addEventListener("click", function(){ stopPlay(); if (SIM) go(SIM.steps.length - 1); });
+$("btn-play").addEventListener("click", togglePlay);
+$("speed").addEventListener("change", function(){ if (TIMER){ stopPlay(); togglePlay(); } });
+$("log").addEventListener("click", function(e){ const tr = e.target.closest("tr[data-k]"); if (tr){ stopPlay(); go(Number(tr.dataset.k)); } });
+$("btn-tests").addEventListener("click", runTests);
+$("tresults").addEventListener("click", function(e){
+  const b = e.target.closest("button[data-w]");
+  if (!b) return;
+  $("in-w").value = b.dataset.w; runString();
+  if (SIM) go(0);
+  $("h-dia").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+const dia = $("diagram");
+dia.addEventListener("pointerdown", function(e){
+  const g = e.target.closest(".node"); if (!g) return;
+  DRAG = g.dataset.q; try { dia.setPointerCapture(e.pointerId); } catch (err) {}
+  e.preventDefault();
+});
+dia.addEventListener("pointermove", function(e){
+  if (!DRAG || !POS[DRAG]) return;
+  const p = svgPoint(e);
+  POS[DRAG] = { x: Math.max(R + 4, Math.min(DW - R - 4, p.x)), y: Math.max(R + 4, Math.min(DH - R - 4, p.y)) };
+  renderDiagram();
+});
+["pointerup", "pointercancel"].forEach(t => dia.addEventListener(t, function(){ DRAG = null; }));
+
+loadPreset(0);
+</script>
+</body>
+</html>
