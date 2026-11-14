@@ -28,3 +28,6 @@ accept if S ∩ F ≠ ∅
 ```
 
 A DFA is the special case where S always holds exactly one state.
+
+anshul mittal
+S24CSEU1052
